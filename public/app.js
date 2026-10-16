@@ -1135,14 +1135,21 @@ function toggleFullscreen(s) {
   if (s.el.requestFullscreen) s.el.requestFullscreen().catch(() => {});
 }
 
+// Re-fits when the full-screen box changes size (bars hiding, rotating).
+const fsWatch = new ResizeObserver(() => { if (document.fullscreenElement) fitFullscreen(); });
+
 // A full-screen stream is laid out for the whole screen: upright with its
 // chat open, video on top and chat filling the rest; sideways, just video.
 function fitFullscreen() {
   const el = document.fullscreenElement;
   const s = el && state.streams.find((x) => x.el === el);
   for (const x of state.streams) if (x !== s && x.el) x.el.classList.remove("fs-nochat");
-  if (!s) { layoutPage(); return; }
-  const w = window.innerWidth, h = window.innerHeight;
+  if (!s) { layoutPage(); fsWatch.disconnect(); return; }
+  fsWatch.observe(s.el);
+  // Measure the full-screen box itself: in the Android app the page's own
+  // height (innerHeight) still excludes the hidden status/navigation bars.
+  const r = s.el.getBoundingClientRect();
+  const w = Math.round(r.width) || window.innerWidth, h = Math.round(r.height) || window.innerHeight;
   const withChat = s.chatOpen && chatInTile() && h > w;
   const keep = chatBelow;
   chatBelow = withChat;
