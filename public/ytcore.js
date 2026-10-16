@@ -212,33 +212,58 @@
     return m ? m[1] : null;
   }
 
+  // YouTube sometimes answers servers (e.g. the Cloudflare relay) with an empty
+  // shell page: title " - YouTube", no canonical link, no stream info.
+  const isStripped = (html) => /<title>\s*-\s*YouTube\s*<\/title>/.test(html) || !/<link rel="canonical"/.test(html);
+
   async function liveFromPath(c, getText) {
     const r = await getPage(livePageUrl(c.path), getText);
     if (r.status === 404) throw httpError(404, "YouTube says that channel doesn't exist.");
     if (r.status < 200 || r.status >= 300) throw httpError(502, `YouTube answered ${r.status}.`);
-    return channelValue(c, parseLivePage(r.text));
+    return { value: channelValue(c, parseLivePage(r.text)), text: r.text, stripped: isStripped(r.text) };
+  }
+
+  async function handleFromHome(c, getText) {
+    try {
+      const home = await getPage(`https://www.youtube.com${c.path}`, getText);
+      return home.status >= 200 && home.status < 300 ? findHandle(home.text) : null;
+    } catch (e) { return null; }
+  }
+
+  async function viaHandle(handle, c, id, getText) {
+    const v = (await liveFromPath({ kind: "channel", path: `/${handle}` }, getText)).value;
+    v.input = c.path.replace(/^\//, "");
+    v.channelId = v.channelId || id;
+    return v;
   }
 
   /** getText(url) -> { status, text } (or a plain string). */
   async function resolveFromPage(c, getText) {
+    const id = (c.path.match(/^\/channel\/(UC[A-Za-z0-9_-]{22})$/) || [])[1];
+    let got;
     try {
-      return await liveFromPath(c, getText);
+      got = await liveFromPath(c, getText);
     } catch (first) {
-      // Channel-ID links (/channel/UC…/live) can fail from some servers while
-      // @handle links work: read the channel's page for its @handle and retry.
-      const id = (c.path.match(/^\/channel\/(UC[A-Za-z0-9_-]{22})$/) || [])[1];
+      // Channel-ID page failed: find the channel's @handle and use that.
       if (!id) throw first;
-      let handle = null;
-      try {
-        const home = await getPage(`https://www.youtube.com${c.path}`, getText);
-        if (home.status >= 200 && home.status < 300) handle = findHandle(home.text);
-      } catch (e) { /* fall through */ }
+      const handle = id && await handleFromHome(c, getText);
       if (!handle) throw first;
-      const v = await liveFromPath({ kind: "channel", path: `/${handle}` }, getText);
-      v.input = c.path.replace(/^\//, "");
-      v.channelId = v.channelId || id;
-      return v;
+      return viaHandle(handle, c, id, getText);
     }
+    if (got.value.live || got.value.upcoming || !got.stripped) return got.value;
+    // An empty shell page: don't trust its "not live".
+    if (id) {
+      // /channel/UC…/live comes back empty from Cloudflare while /@handle/live
+      // works; the shell page usually still names the @handle.
+      const handle = findHandle(got.text) || await handleFromHome(c, getText);
+      if (handle) { try { return await viaHandle(handle, c, id, getText); } catch (e) { /* keep first answer */ } }
+    } else {
+      try {
+        const again = await liveFromPath(c, getText);   // one retry
+        if (!again.stripped || again.value.live || again.value.upcoming) return again.value;
+      } catch (e) { /* keep first answer */ }
+    }
+    return got.value;
   }
 
   async function searchFromPage(q, live, getText) {
