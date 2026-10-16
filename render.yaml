@@ -1,0 +1,22 @@
+# Render Blueprint: New > Blueprint > pick this repo, and Render reads this file.
+#
+# A Static Site: Render serves the public/ folder from its CDN. No server
+# runs, so nothing sleeps and there's no 30-second wake-up. Search and
+# @handle lookups go through the Cloudflare Worker (public/config.js ->
+# relayUrl; see worker/README.md). Video and chat come straight from YouTube.
+services:
+  - type: web
+    name: multistream-site
+    runtime: static
+    buildCommand: "true"          # nothing to build
+    staticPublishPath: ./public
+    headers:
+      # Browsers check for a newer version on each visit (tiny 304 if unchanged).
+      - path: /*
+        name: Cache-Control
+        value: no-cache
+    routes:
+      # Android app link check (only used by the old PWABuilder app).
+      - type: rewrite
+        source: /.well-known/assetlinks.json
+        destination: /assetlinks.json

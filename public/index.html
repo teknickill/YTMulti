@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>MultiStream — watch several YouTube streams at once</title>
+  <meta name="description" content="Watch several YouTube live streams side by side, with each stream's chat, one-click audio switching and a shareable link.">
+  <meta name="theme-color" content="#14161b">
+  <meta property="og:title" content="MultiStream">
+  <meta property="og:description" content="Watch several YouTube live streams at once, each with its own chat.">
+  <meta property="og:type" content="website">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-512.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand" aria-label="MultiStream">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2" y="4" width="9" height="7" rx="1.5"/><rect x="13" y="4" width="9" height="7" rx="1.5"/><rect x="2" y="13" width="9" height="7" rx="1.5"/><rect x="13" y="13" width="9" height="7" rx="1.5"/></svg>
+      <span>MultiStream</span>
+    </div>
+
+    <form id="addForm" class="add" autocomplete="off">
+      <input id="addInput" type="search" spellcheck="false" enterkeyhint="search"
+             autocapitalize="off" autocorrect="off"
+             placeholder="Search YouTube, or paste a link / @handle"
+             aria-label="Search YouTube or paste a link">
+      <button type="submit" class="btn primary" id="addBtn">Search</button>
+      <div id="results" class="results" hidden></div>
+    </form>
+
+    <!-- Phones: one slim bar. + opens the Add sheet, ☰ opens everything else. -->
+    <div class="mobile-actions">
+      <button type="button" class="btn primary" id="mAdd" aria-label="Add a stream">+ Add</button>
+      <button type="button" class="btn icon" id="mMute" aria-label="Mute all"></button>
+      <button type="button" class="btn icon" id="mMenu" aria-label="Menu"></button>
+    </div>
+
+    <div class="tools">
+      <div class="seg" role="group" aria-label="Audio mode" title="Solo: one stream has sound at a time. Mix: set each stream's volume yourself.">
+        <button type="button" data-audio="solo">Solo audio</button>
+        <button type="button" data-audio="mix">Mix</button>
+      </div>
+      <div class="seg" role="group" aria-label="Data use"
+           title="Full: normal quality. Saver: low quality, and streams you aren't listening to stop while this tab is in the background. Min: only the stream with sound plays; the rest show a still picture.">
+        <button type="button" data-quality="full">Full</button>
+        <button type="button" data-quality="saver">Saver</button>
+        <button type="button" data-quality="min">Min</button>
+      </div>
+      <div class="seg" role="group" aria-label="Layout">
+        <button type="button" data-layout="grid" title="Grid (F)">Grid</button>
+        <button type="button" data-layout="focus" title="One big, the rest beside it (F)">Focus</button>
+      </div>
+      <button type="button" class="btn icon" id="muteAll" title="Mute all (M)"></button>
+      <button type="button" class="btn icon" id="playAll" title="Play / pause all (Space)"></button>
+      <button type="button" class="btn icon" id="chatToggle" title="Show every stream's chat (C)"></button>
+      <button type="button" class="btn icon" id="shareBtn" title="Copy a link to this set of streams" data-label="Copy share link"></button>
+      <button type="button" class="btn icon" id="accountBtn" title="YouTube account for chat" data-label="YouTube account"></button>
+      <button type="button" class="btn icon" id="helpBtn" title="Shortcuts and tips (?)" data-label="Help"></button>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <main class="main">
+    <section id="stage" class="stage" aria-label="Streams">
+      <div id="empty" class="empty">
+        <h1>Watch several live streams at once</h1>
+        <p><b>Search</b> for a stream by name — or paste any of these, one at a time or comma-separated:</p>
+        <ul>
+          <li><code>@handle</code> or a channel link — follows whatever that channel is streaming, and picks up the next stream when it goes live</li>
+          <li>A live or video link: <code>youtube.com/watch?v=…</code>, <code>youtu.be/…</code>, <code>youtube.com/live/…</code></li>
+          <li>An 11-character video ID</li>
+        </ul>
+        <button type="button" class="btn primary only-mobile" data-open-add>+ Add a stream</button>
+        <div class="examples">
+          <span class="muted">Try one:</span>
+          <button type="button" class="chip" data-example="@LofiGirl">Lofi Girl</button>
+          <button type="button" class="chip" data-example="@NASA">NASA</button>
+          <button type="button" class="chip" data-example="@LofiGirl, @NASA">Both at once</button>
+        </div>
+        <p class="muted">Streams you add are remembered on this device. 🔗 copies a link that opens the same set, chats included.</p>
+      </div>
+    </section>
+
+    <!-- Computers and tablets: open chats sit here, full height, beside the streams. -->
+    <aside id="chatDock" class="dock" hidden aria-label="Live chats">
+      <div class="dock-resize" title="Drag to resize"></div>
+      <div class="dock-tabs" role="tablist"></div>
+      <div class="dock-body"></div>
+    </aside>
+  </main>
+
+  <dialog id="help" class="help">
+    <h2>Shortcuts</h2>
+    <table>
+      <tr><td><kbd>1</kbd>–<kbd>9</kbd></td><td>Give sound to stream 1–9 (Solo) or mute/unmute it (Mix)</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Mute / unmute everything</td></tr>
+      <tr><td><kbd>Space</kbd></td><td>Pause / play all</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Grid ↔ Focus layout</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Show / hide every stream's chat (💬 on a stream does just that one)</td></tr>
+      <tr><td><kbd>/</kbd></td><td>Jump to the search / Add box</td></tr>
+    </table>
+    <h2>Tips</h2>
+    <ul>
+      <li>Click a stream to give it the sound. Its buttons appear while you move the mouse over it (on phones: tap it). Drag a stream by its name to reorder (on phones: ⋯ → Move up / down).</li>
+      <li>💬 on a stream opens its chat in a full-height column on the right (under the video on phones). Two chats stack; three or more become tabs. Drag the column's edge to resize it; ↗ pops a chat into its own window.</li>
+      <li>In Focus layout, ⤢ on a stream makes it the big one.</li>
+      <li>Browsers block sound until you click the page once — the app reminds you.</li>
+      <li>Some streams can't be embedded (the uploader turned it off). Those show an <b>Open on YouTube</b> button.</li>
+      <li><b>Data use:</b> <b>Full</b> plays everything normally. <b>Saver</b> drops every stream to low quality (the one with sound a bit higher) and stops the others while the tab is in the background. <b>Min</b> plays only the stream with sound; the rest show a picture that updates each minute — click one to switch to it.</li>
+    </ul>
+    <form method="dialog"><button class="btn primary">Close</button></form>
+  </dialog>
+
+  <dialog id="addSheet" class="sheet" aria-label="Add streams">
+    <div class="sheet-title">Add streams</div>
+    <div id="addSlot" class="sheet-pad"></div>
+    <div class="examples sheet-pad">
+      <span class="muted">Try:</span>
+      <button type="button" class="chip" data-example="@LofiGirl">Lofi Girl</button>
+      <button type="button" class="chip" data-example="@NASA">NASA</button>
+    </div>
+    <form method="dialog"><button class="sheet-cancel">Close</button></form>
+  </dialog>
+
+  <dialog id="panel" class="sheet" aria-label="Settings">
+    <div class="sheet-title">Settings</div>
+    <div class="panel-row"><span>Sound</span><div id="slotAudio"></div></div>
+    <div class="panel-row"><span>Data use</span><div id="slotData"></div></div>
+    <div class="panel-row"><span>Layout</span><div id="slotLayout"></div></div>
+    <div id="slotActions" class="panel-actions"></div>
+    <form method="dialog"><button class="sheet-cancel">Close</button></form>
+  </dialog>
+
+  <dialog id="account" class="sheet account" aria-label="YouTube account for chat">
+    <div class="sheet-title">YouTube account for chat</div>
+    <div class="sheet-pad">
+      <div class="seg account-seg" role="group" aria-label="Chat account">
+        <button type="button" data-account="in">Signed in</button>
+        <button type="button" data-account="out">Signed out</button>
+      </div>
+      <p class="account-what muted"></p>
+      <div class="account-actions">
+        <button type="button" class="btn primary" id="signInBtn">Sign in to YouTube</button>
+        <button type="button" class="btn" id="signOutBtn">Sign out</button>
+      </div>
+      <p class="account-note muted"></p>
+    </div>
+    <form method="dialog"><button class="sheet-cancel">Done</button></form>
+  </dialog>
+
+  <dialog id="sheet" class="sheet" aria-label="Stream options">
+    <div class="sheet-title"></div>
+    <div class="sheet-list"></div>
+    <form method="dialog"><button class="sheet-cancel">Cancel</button></form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/config.js"></script>
+  <script src="/ytcore.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

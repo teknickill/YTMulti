@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.onrender.multistream_2erp.twa",
+      "sha256_cert_fingerprints": [
+        "CE:82:9D:6F:20:C2:88:F4:FD:C3:F7:8F:50:F2:25:AA:34:9B:A4:EE:E5:01:D6:DD:A7:E8:C2:6A:E0:E0:D4:22"
+      ]
+    }
+  }
+]
