@@ -754,8 +754,9 @@ function layout() {
     const ordered = main ? [main, ...list.filter((s) => s !== main)] : list;
     const w = stage.clientWidth - gap * 2;
     let y = gap;
-    // A phone chat gets most of the screen's height, so it reads like the real chat.
-    const chatH = Math.max(320, Math.round(stage.clientHeight * 0.62));
+    // A stream with its chat open fills exactly one screen: video on top, chat
+    // using all the height left below it (no blank band, nothing cut off).
+    const chatH = Math.max(320, stage.clientHeight - gap * 2 - Math.round(w * 9 / 16));
     for (const s of ordered) {
       const h = w * 9 / 16 + (s.chatOpen && chatBelow ? chatH : 0);
       placeTile(s, gap, y, w, h);
@@ -1509,6 +1510,16 @@ function bindUi() {
   });
 
   new ResizeObserver(() => layout()).observe($("#stage"));
+  // The page itself never scrolls (only the stream list does). Phones can
+  // still nudge it, e.g. to show a focused chat box over the keyboard, and
+  // then leave it shifted with the top bar gone. Snap it back.
+  const unshift = () => {
+    const se = document.scrollingElement || document.documentElement;
+    if (se.scrollTop || se.scrollLeft) se.scrollTo(0, 0);
+    if (document.body.scrollTop) document.body.scrollTop = 0;
+  };
+  window.addEventListener("scroll", unshift, { passive: true });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", unshift);
 }
 
 function init() {
