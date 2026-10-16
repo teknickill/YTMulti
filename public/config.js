@@ -8,5 +8,5 @@
 //           The Android app doesn't need it (it reads YouTube itself).
 //           Empty and the site run with `node server.js`: its own /api is used.
 window.MULTISTREAM_CONFIG = {
-  relayUrl: "",
+  relayUrl: "https://sweet-meadow-77d1.millernick192.workers.dev",
 };

@@ -977,7 +977,7 @@ function resultRow(r) {
   const added = state.streams.some((s) => s.videoId === r.videoId || s.input === r.videoId);
   const status = r.live ? `<span class="live-dot">LIVE</span>${r.viewers ? ` ${escapeHtml(r.viewers)}` : ""}`
     : r.upcoming ? `<span class="soon">Upcoming</span>` : escapeHtml(r.length || "");
-  return `<div class="result" data-video="${r.videoId}" data-channel="${r.channelId || ""}"
+  return `<div class="result" data-video="${r.videoId}" data-channel="${r.channelId || ""}" data-handle="${escapeHtml(r.channelHandle || "")}"
       data-title="${escapeHtml(r.title)}" data-name="${escapeHtml(r.channel)}">
     <img src="${escapeHtml(r.thumb || "")}" data-fallback="${escapeHtml(r.thumbFallback || "")}" alt="" loading="lazy">
     <div class="result-text">
@@ -995,7 +995,9 @@ function resultRow(r) {
 function pickResult(row, kind) {
   const videoId = row.dataset.video;
   const channelId = row.dataset.channel;
-  const input = kind === "channel" && channelId ? channelId : videoId;
+  // Follow by @handle when known: the most reliable lookup everywhere.
+  const channel = row.dataset.handle || channelId;
+  const input = kind === "channel" && channel ? channel : videoId;
   const r = addOne(input, { label: row.dataset.name || undefined });
   if (r !== "added") return;
   layout(); save(); applyAudio(); updateGlobalButtons();

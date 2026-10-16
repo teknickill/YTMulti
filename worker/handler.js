@@ -6,6 +6,7 @@
  *   GET /search?q=lofi&live=1     -> { results: [...], source }
  *   GET /resolve?q=@LofiGirl      -> { kind, channelId, live, videoId, ... }
  *   GET /health                   -> { ok: true }
+ *   add &debug=1 to /resolve      -> what YouTube sent back (always HTTP 200)
  *
  * Setting (Worker -> Settings -> Variables), optional:
  *   ALLOWED_ORIGINS  your site, e.g. https://multistream.onrender.com
@@ -66,6 +67,21 @@ export default {
         return json(200, r, request, env, 60);
       }
       if (q.length > 300) return json(400, { error: "That's too long to be a YouTube link." }, request, env);
+      if (url.searchParams.get("debug") === "1") {
+        const trace = [];
+        const getText = async (u) => {
+          const r = await YT.fetchPage(u);
+          trace.push({ asked: u, status: r.status, finalUrl: r.url, bytes: r.text.length,
+            title: (r.text.match(/<title>([^<]*)<\/title>/) || [])[1] || null,
+            watchCanonical: /<link rel="canonical" href="https:\/\/www\.youtube\.com\/watch\?v=/.test(r.text),
+            handle: YT.findHandle(r.text) });
+          return r;
+        };
+        YT._resolveCache.delete(YT.classify(q).path);
+        let result = null, error = null;
+        try { result = await YT.resolve(q, { getText, fresh: true }); } catch (e) { error = { status: e.status || 502, message: e.message }; }
+        return json(200, { trace, result, error }, request, env);
+      }
       const r = await YT.resolve(q, Object.assign({ fresh: url.searchParams.get("fresh") === "1" }, opts));
       return json(200, r, request, env, 20);
     } catch (e) {

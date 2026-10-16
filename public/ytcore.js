@@ -125,6 +125,13 @@
     return out;
   }
 
+  // "/@LofiGirl" in a search result's channel link -> "@LofiGirl".
+  function handleOf(run) {
+    const be = run && run.navigationEndpoint && run.navigationEndpoint.browseEndpoint;
+    const u = (be && be.canonicalBaseUrl) || "";
+    return /^\/@[A-Za-z0-9._-]{3,100}$/.test(u) ? u.slice(1) : null;
+  }
+
   const text = (t) => (t ? t.simpleText || (t.runs || []).map((r) => r.text).join("") : "") || "";
 
   /** A search results page -> list of videos. */
@@ -153,6 +160,7 @@
           channel: owner[0] ? owner[0].text : "",
           channelId: (owner[0] && owner[0].navigationEndpoint && owner[0].navigationEndpoint.browseEndpoint &&
                       owner[0].navigationEndpoint.browseEndpoint.browseId) || null,
+        channelHandle: handleOf(owner[0]),
           thumb: `https://i.ytimg.com/vi/${v.videoId}/mqdefault${live ? "_live" : ""}.jpg`,
           thumbFallback: thumbs.length ? thumbs[thumbs.length - 1].url : null,
           live,
@@ -174,7 +182,7 @@
   /** Server / relay: download a youtube.com page. Returns { status, text }. */
   async function fetchPage(url) {
     const res = await fetch(url, { redirect: "follow", headers: PAGE_HEADERS, signal: AbortSignal.timeout(10000) });
-    return { status: res.status, text: await res.text() };
+    return { status: res.status, text: await res.text(), url: res.url || url };
   }
 
   function channelValue(c, p) {
@@ -191,13 +199,46 @@
     };
   }
 
-  /** getText(url) -> { status, text } (or a plain string). */
-  async function resolveFromPage(c, getText) {
-    let r = await getText(livePageUrl(c.path));
-    if (typeof r === "string") r = { status: 200, text: r };
+  async function getPage(url, getText) {
+    const r = await getText(url);
+    return typeof r === "string" ? { status: 200, text: r } : r;
+  }
+
+  /** A channel page -> its @handle ("@NASA"), or null. */
+  function findHandle(html) {
+    const m = html.match(/"canonicalBaseUrl":"\/(@[A-Za-z0-9._-]{3,100})"/) ||
+              html.match(/"vanityChannelUrl":"https?:\/\/www\.youtube\.com\/(@[A-Za-z0-9._-]{3,100})"/) ||
+              html.match(/<link rel="canonical" href="https:\/\/www\.youtube\.com\/(@[A-Za-z0-9._-]{3,100})"/);
+    return m ? m[1] : null;
+  }
+
+  async function liveFromPath(c, getText) {
+    const r = await getPage(livePageUrl(c.path), getText);
     if (r.status === 404) throw httpError(404, "YouTube says that channel doesn't exist.");
     if (r.status < 200 || r.status >= 300) throw httpError(502, `YouTube answered ${r.status}.`);
     return channelValue(c, parseLivePage(r.text));
+  }
+
+  /** getText(url) -> { status, text } (or a plain string). */
+  async function resolveFromPage(c, getText) {
+    try {
+      return await liveFromPath(c, getText);
+    } catch (first) {
+      // Channel-ID links (/channel/UC…/live) can fail from some servers while
+      // @handle links work: read the channel's page for its @handle and retry.
+      const id = (c.path.match(/^\/channel\/(UC[A-Za-z0-9_-]{22})$/) || [])[1];
+      if (!id) throw first;
+      let handle = null;
+      try {
+        const home = await getPage(`https://www.youtube.com${c.path}`, getText);
+        if (home.status >= 200 && home.status < 300) handle = findHandle(home.text);
+      } catch (e) { /* fall through */ }
+      if (!handle) throw first;
+      const v = await liveFromPath({ kind: "channel", path: `/${handle}` }, getText);
+      v.input = c.path.replace(/^\//, "");
+      v.channelId = v.channelId || id;
+      return v;
+    }
   }
 
   async function searchFromPage(q, live, getText) {
@@ -262,7 +303,7 @@
 
   const YTCore = {
     classify, decodeEntities, compact, parseLivePage, parseResultsPage, channelValue,
-    livePageUrl, searchPageUrl, fetchPage, PAGE_HEADERS, httpError, isFinal,
+    livePageUrl, searchPageUrl, fetchPage, findHandle, PAGE_HEADERS, httpError, isFinal,
     resolveFromPage, searchFromPage,
     resolve, search, _resolveCache: resolveCache, _searchCache: searchCache,
   };
