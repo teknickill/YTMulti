@@ -58,6 +58,7 @@
       <button type="button" class="btn icon" id="muteAll" title="Mute all (M)"></button>
       <button type="button" class="btn icon" id="playAll" title="Play / pause all (Space)"></button>
       <button type="button" class="btn icon" id="chatToggle" title="Show every stream's chat (C)"></button>
+      <button type="button" class="btn icon" id="setsBtn" title="Saved sets and sleep timer" data-label="Saved sets &amp; sleep timer"></button>
       <button type="button" class="btn icon" id="shareBtn" title="Copy a link to this set of streams" data-label="Copy share link"></button>
       <button type="button" class="btn icon" id="accountBtn" title="YouTube account for chat" data-label="YouTube account"></button>
       <button type="button" class="btn icon" id="helpBtn" title="Shortcuts and tips (?)" data-label="Help"></button>
@@ -112,6 +113,9 @@
       <li>In Focus layout, ⤢ on a stream makes it the big one.</li>
       <li>Browsers block sound until you click the page once — the app reminds you.</li>
       <li>Some streams can't be embedded (the uploader turned it off). Those show an <b>Open on YouTube</b> button.</li>
+      <li><b>Saved sets</b> (🔖): name the streams on screen and switch between sets in one tap. The <b>sleep timer</b> is there too: it pauses everything when time's up.</li>
+      <li><b>Recent:</b> tap the empty search box to re-add channels you watched before.</li>
+      <li>When a channel you follow goes live, a message pops up — tap <b>Listen</b> to give it the sound.</li>
       <li><b>Data use:</b> <b>Full</b> plays everything normally. <b>Saver</b> drops every stream to low quality (the one with sound a bit higher) and stops the others while the tab is in the background. <b>Min</b> plays only the stream with sound; the rest show a picture that updates each minute — click one to switch to it.</li>
     </ul>
     <form method="dialog"><button class="btn primary">Close</button></form>
@@ -135,6 +139,29 @@
     <div class="panel-row"><span>Layout</span><div id="slotLayout"></div></div>
     <div id="slotActions" class="panel-actions"></div>
     <form method="dialog"><button class="sheet-cancel">Close</button></form>
+  </dialog>
+
+  <dialog id="sets" class="sheet sets" aria-label="Saved sets and sleep timer">
+    <div class="sheet-title">Saved sets</div>
+    <div class="sheet-pad">
+      <div id="setList" class="set-list"></div>
+      <form id="setForm" class="set-form" autocomplete="off">
+        <input id="setName" maxlength="40" placeholder="Name the streams on screen now" aria-label="Name for this set">
+        <button type="submit" class="btn primary">Save</button>
+      </form>
+    </div>
+    <div class="sheet-title">Sleep timer</div>
+    <div class="sheet-pad">
+      <div class="seg sleep-seg" role="group" aria-label="Sleep timer">
+        <button type="button" data-sleep="0">Off</button>
+        <button type="button" data-sleep="15">15m</button>
+        <button type="button" data-sleep="30">30m</button>
+        <button type="button" data-sleep="60">1h</button>
+        <button type="button" data-sleep="90">1.5h</button>
+      </div>
+      <p id="sleepLeft" class="muted sleep-left"></p>
+    </div>
+    <form method="dialog"><button class="sheet-cancel">Done</button></form>
   </dialog>
 
   <dialog id="account" class="sheet account" aria-label="YouTube account for chat">

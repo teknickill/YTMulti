@@ -82,6 +82,11 @@ Paste several at once, separated by commas or spaces. Up to 16 streams.
 | Live chat | 💬 on a stream opens **that stream's chat** in a full-height column on the right. 1–2 chats stack; 3 or more become tabs, so each chat always gets the whole column. Drag the column's left edge to resize it. `C` or the toolbar 💬 shows/hides every chat. ↗ pops a chat into its own window. Pointing at a chat outlines its stream. On phones a chat opens under its video, most of the screen tall |
 | Full screen one stream | Double-click it |
 | Share the set | 🔗 copies a link that opens the same streams |
+| Saved sets | 🔖 → name the streams on screen → **Save**. Tap a saved set to switch to it (**Undo** brings back what was on screen). Kept in this browser/app |
+| Sleep timer | 🔖 → 15 min to 1.5 h. Pauses everything when time's up |
+| Recent channels | Tap the empty search box: channels you watched before, one tap to re-add |
+| "Now live" alerts | When a followed channel that was offline goes live, a message pops up. **Listen** gives it the sound |
+| Screen stays on | In a browser, the screen stays awake while something plays (where the browser allows it) |
 | YouTube account for chat | 👤 in the toolbar, the ☰ menu or any chat header. **Signed in**: chats use your YouTube login (type, badges). **Signed out**: chats never show your account. **Sign in to YouTube** opens Google's sign-in, then reloads the chats. In the Android app, **Sign out** clears the app's YouTube login |
 
 Your streams, audio mode, layout and data setting are remembered in this browser.

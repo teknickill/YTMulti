@@ -350,6 +350,26 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   .sheet.account { margin: auto; border-radius: 16px; max-width: 460px; }
 }
 
+.recents { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px 14px; }
+.recents .chip:disabled { opacity: .55; cursor: default; }
+.recent-title { padding-left: 4px; font-size: 13px; }
+.set-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.set-list p { margin: 6px 2px; }
+.set-row { display: flex; align-items: center; gap: 6px; }
+.set-load { flex: 1; display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; text-align: left; font: inherit; }
+.set-load:hover { border-color: var(--accent); }
+.set-load b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-form { display: flex; gap: 8px; }
+.set-form input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: 16px; }
+.sleep-seg { display: flex; }
+.sleep-seg button { flex: 1; height: 40px; }
+.sleep-left { margin: 10px 2px 4px; font-size: 13px; }
+@media (min-width: 721px) {
+  .sheet.sets { margin: auto; border-radius: 16px; max-width: 460px; }
+}
+
 .examples { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 12px; }
 .chip {
   height: 34px; padding: 0 14px; border-radius: 999px;

@@ -25,6 +25,7 @@ const ICON = {
   focus: '<svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
   reload: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>',
   open: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  sets: '<svg viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></svg>',
   user: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>',
   pip: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1" fill="currentColor"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></svg>',
@@ -367,7 +368,13 @@ async function resolveStream(s, fresh = false) {
     if (r.channelName) s.label = r.channelName;
     renderTileHeader(s);
     renderTileChat(s);
+    rememberRecent(s.input, s.label);
     if (r.videoId && (r.live || r.upcoming)) {
+      // Was waiting for this channel and it just went live: say so.
+      if (r.live && s.wasWaiting) {
+        toast(`${s.label} is live now.`, false, { label: "Listen", run: () => giveSound(s) });
+      }
+      s.wasWaiting = false;
       s.live = r.live;
       if (r.videoId !== s.videoId || !s.player) {
         s.videoId = r.videoId;
@@ -384,6 +391,7 @@ async function resolveStream(s, fresh = false) {
       s.live = false;
       if (!s.player) {
         setStatus(s, "waiting");
+        s.wasWaiting = true;
       }
       s.pollTimer = setTimeout(() => resolveStream(s, true), offlineDelay(s));
     }
@@ -518,6 +526,24 @@ function setStatus(s, status, error = null) {
   s.status = status;
   s.error = error;
   renderTileStatus(s);
+  syncWakeLock();
+}
+
+/* ----------------------------------------------------- keep screen awake */
+// In a browser, keep the phone's screen on while something is playing (the
+// Android app already does this itself).
+let wakeLock = null;
+async function syncWakeLock() {
+  if (APP || !("wakeLock" in navigator)) return;
+  const want = !document.hidden && !state.allPaused && state.streams.some((s) => s.status === "playing");
+  try {
+    if (want && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release", () => { wakeLock = null; });
+    } else if (!want && wakeLock) {
+      const w = wakeLock; wakeLock = null; await w.release();
+    }
+  } catch (e) { wakeLock = null; /* refused (battery saver etc.) */ }
 }
 
 function renderTileStatus(s) {
@@ -1018,12 +1044,18 @@ function bindSearch() {
   const input = $("#addInput");
   const btn = $("#addBtn");
   const relabel = () => { btn.textContent = input.value.trim() && !wantsSearch(input.value) ? "Add" : "Search"; };
-  input.addEventListener("input", relabel);
+  input.addEventListener("input", () => { relabel(); if (!input.value.trim()) showRecents(); });
+  input.addEventListener("focus", () => { if (!input.value.trim() && $("#results").hidden) showRecents(); });
   relabel();
   $("#results").addEventListener("click", (e) => {
     const live = e.target.closest("[data-live]");
     if (live) { searchLive = live.dataset.live === "1"; runSearch(lastQuery); return; }
     if (e.target.closest('[data-results="close"]')) { closeResults(); return; }
+    const recent = e.target.closest("[data-recent]");
+    if (recent && !recent.disabled) {
+      if (addStreams(recent.dataset.recent)) { recent.disabled = true; recent.textContent += " ✓"; toast(`Added ${recent.textContent.replace(/ ✓$/, "")}.`); }
+      return;
+    }
     const pick = e.target.closest("[data-pick]");
     if (pick && !pick.disabled) pickResult(pick.closest(".result"), pick.dataset.pick);
   });
@@ -1161,6 +1193,126 @@ function togglePauseAll() {
   state.allPaused = !state.allPaused;
   applyPlayback();
   updateGlobalButtons();
+  syncWakeLock();
+}
+
+/* ------------------------------------------------------ recent channels */
+// Channels you've watched, newest first, shown when the search box is empty.
+const RECENT_KEY = "multistream.recent";
+const RECENT_MAX = 10;
+function readList(key) {
+  try { const v = JSON.parse(localStorage.getItem(key) || "[]"); return Array.isArray(v) ? v : []; } catch { return []; }
+}
+function writeList(key, list) {
+  try { localStorage.setItem(key, JSON.stringify(list)); } catch { /* private mode */ }
+}
+function rememberRecent(input, label) {
+  if (!input) return;
+  const key = input.toLowerCase();
+  const list = readList(RECENT_KEY).filter((r) => r && r.input && r.input.toLowerCase() !== key);
+  list.unshift({ input, label: label || prettyInput(input) });
+  writeList(RECENT_KEY, list.slice(0, RECENT_MAX));
+}
+function showRecents() {
+  const box = $("#results");
+  const onScreen = new Set(state.streams.map((s) => s.input.toLowerCase()));
+  const list = readList(RECENT_KEY).filter((r) => r && r.input);
+  if (!list.length || $("#addInput").value.trim()) return;
+  box.hidden = false;
+  box.innerHTML = `<div class="results-head"><span class="muted recent-title">Recent</span>
+      <button type="button" class="tile-btn small" data-results="close" title="Close">${ICON.close}</button></div>
+    <div class="recents">${list.map((r) => {
+      const here = onScreen.has(r.input.toLowerCase());
+      return `<button type="button" class="chip" data-recent="${escapeHtml(r.input)}" ${here ? "disabled" : ""}>${escapeHtml(r.label)}${here ? " ✓" : ""}</button>`;
+    }).join("")}</div>`;
+}
+
+/* ------------------------------------------------------------ saved sets */
+const SETS_KEY = "multistream.sets";
+const SETS_MAX = 20;
+function openSets() {
+  for (const d of document.querySelectorAll("#panel[open]")) d.close();
+  renderSets();
+  renderSleep();
+  $("#sets").showModal();
+}
+function renderSets() {
+  const sets = readList(SETS_KEY);
+  $("#setList").innerHTML = sets.length
+    ? sets.map((set, i) => `<div class="set-row">
+        <button type="button" class="set-load" data-set="${i}"><b>${escapeHtml(set.name)}</b>
+          <span class="muted">${set.items.length} stream${set.items.length === 1 ? "" : "s"}</span></button>
+        <button type="button" class="tile-btn small" data-set-del="${i}" title="Delete ${escapeHtml(set.name)}">${ICON.close}</button>
+      </div>`).join("")
+    : `<p class="muted">No saved sets yet. Add some streams, then name them below.</p>`;
+}
+function currentItems() {
+  return state.streams.map((s) => ({ input: s.input, label: s.label, chatOpen: s.chatOpen, volume: s.volume, mixMuted: s.mixMuted }));
+}
+function saveSet(name) {
+  name = String(name || "").trim().slice(0, 40);
+  if (!state.streams.length) { toast("Add some streams first."); return false; }
+  if (!name) { toast("Give the set a name."); return false; }
+  const sets = readList(SETS_KEY).filter((x) => x && x.name && x.name.toLowerCase() !== name.toLowerCase());
+  sets.unshift({ name, items: currentItems(), layout: state.layout });
+  writeList(SETS_KEY, sets.slice(0, SETS_MAX));
+  toast(`Saved “${name}”.`);
+  return true;
+}
+// Replaces what's on screen; the old streams come back with Undo.
+function showItems(items, layoutMode) {
+  for (const s of [...state.streams]) removeStream(s, { undo: false });
+  for (const it of items.slice(0, MAX_STREAMS)) addOne(it.input, it);
+  state.soloId = state.streams[0] ? state.streams[0].id : null;
+  state.focusId = state.soloId;
+  setLayout(layoutMode === "focus" ? "focus" : "grid");
+  layout(); save(); applyAudio(); updateGlobalButtons();
+}
+function loadSet(i) {
+  const set = readList(SETS_KEY)[i];
+  if (!set || !Array.isArray(set.items)) return;
+  const before = currentItems();
+  const beforeLayout = state.layout;
+  $("#sets").close();
+  showItems(set.items, set.layout);
+  toast(`Showing “${set.name}”.`, false, before.length ? { label: "Undo", run: () => showItems(before, beforeLayout) } : null);
+}
+function deleteSet(i) {
+  const sets = readList(SETS_KEY);
+  const [gone] = sets.splice(i, 1);
+  writeList(SETS_KEY, sets);
+  renderSets();
+  if (gone) toast(`Deleted “${gone.name}”.`, false, {
+    label: "Undo",
+    run: () => { const now = readList(SETS_KEY); now.splice(Math.min(i, now.length), 0, gone); writeList(SETS_KEY, now); if ($("#sets").open) renderSets(); },
+  });
+}
+
+/* ----------------------------------------------------------- sleep timer */
+let sleepTimer = null;
+let sleepAt = 0;
+let sleepTick = null;
+function setSleep(minutes) {
+  clearTimeout(sleepTimer);
+  sleepTimer = null;
+  sleepAt = 0;
+  if (minutes > 0) {
+    sleepAt = Date.now() + minutes * 60000;
+    sleepTimer = setTimeout(() => {
+      sleepTimer = null; sleepAt = 0;
+      if (!state.allPaused) togglePauseAll();
+      renderSleep();
+      toast("Sleep timer: everything's paused. Good night!");
+    }, minutes * 60000);
+    toast(`Pausing everything in ${minutes >= 60 ? `${minutes / 60} h` : `${minutes} min`}.`);
+  }
+  renderSleep();
+}
+function renderSleep() {
+  const left = sleepAt ? Math.max(0, Math.ceil((sleepAt - Date.now()) / 60000)) : 0;
+  document.querySelectorAll("[data-sleep]").forEach((b) => b.classList.toggle("on", sleepAt ? false : b.dataset.sleep === "0"));
+  $("#sleepLeft").textContent = sleepAt ? `Pausing everything in ${left} min. Pick a time to change it, or Off.` : "Pauses every stream when time's up.";
+  $("#setsBtn").classList.toggle("on", !!sleepAt);
 }
 
 function updateGlobalButtons() {
@@ -1423,6 +1575,21 @@ function bindUi() {
   $("#shareBtn").addEventListener("click", copyShare);
   $("#helpBtn").innerHTML = ICON.help;
   $("#accountBtn").innerHTML = ICON.user;
+  $("#setsBtn").innerHTML = ICON.sets;
+  $("#setsBtn").addEventListener("click", openSets);
+  $("#setForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (saveSet($("#setName").value)) { $("#setName").value = ""; renderSets(); }
+  });
+  $("#setList").addEventListener("click", (e) => {
+    const del = e.target.closest("[data-set-del]");
+    if (del) { deleteSet(Number(del.dataset.setDel)); return; }
+    const load = e.target.closest("[data-set]");
+    if (load) loadSet(Number(load.dataset.set));
+  });
+  document.querySelectorAll("[data-sleep]").forEach((b) => b.addEventListener("click", () => setSleep(Number(b.dataset.sleep))));
+  $("#sets").addEventListener("close", () => { clearInterval(sleepTick); sleepTick = null; });
+  $("#setsBtn").addEventListener("click", () => { clearInterval(sleepTick); sleepTick = setInterval(renderSleep, 20000); });
   $("#accountBtn").addEventListener("click", openAccount);
   document.querySelectorAll("[data-account]").forEach((b) => b.addEventListener("click", () => setChatAccount(b.dataset.account)));
   $("#signInBtn").addEventListener("click", signIn);
@@ -1432,7 +1599,7 @@ function bindUi() {
   document.querySelectorAll("[data-layout]").forEach((b) => b.addEventListener("click", () => setLayout(b.dataset.layout)));
   document.querySelectorAll("[data-audio]").forEach((b) => b.addEventListener("click", () => setAudioMode(b.dataset.audio)));
   document.querySelectorAll("[data-quality]").forEach((b) => b.addEventListener("click", () => setDataMode(b.dataset.quality)));
-  document.addEventListener("visibilitychange", applyPlayback);
+  document.addEventListener("visibilitychange", () => { applyPlayback(); syncWakeLock(); });
   setInterval(() => state.streams.forEach((s) => { const b = s.el && $(".data-off", s.el); if (b && !b.hidden) showDataOff(s, true); }), 60_000);
   $("#notice").addEventListener("click", applyAudio);
   document.querySelectorAll("[data-example]").forEach((b) =>
@@ -1473,7 +1640,7 @@ function bindUi() {
   }
   // Actions in the menu close it (toggles like Sound/Data/Layout keep it open).
   $("#slotActions").addEventListener("click", (e) => {
-    const b = e.target.closest("#shareBtn, #helpBtn, #accountBtn");
+    const b = e.target.closest("#shareBtn, #helpBtn, #accountBtn, #setsBtn");
     if (b) $("#panel").close();
   });
   const mq = window.matchMedia("(max-width: 720px)");
@@ -1549,7 +1716,7 @@ function init() {
 // stays one slim row. The same elements are moved (not copied), so every
 // button keeps working.
 const TOOL_ORDER = ['[aria-label="Audio mode"]', '[aria-label="Data use"]', '[aria-label="Layout"]',
-  "#muteAll", "#playAll", "#chatToggle", "#shareBtn", "#accountBtn", "#helpBtn"];
+  "#muteAll", "#playAll", "#chatToggle", "#setsBtn", "#shareBtn", "#accountBtn", "#helpBtn"];
 function isPhoneBar() { return window.matchMedia("(max-width: 720px)").matches; }
 
 function placeToolbar(phone) {
