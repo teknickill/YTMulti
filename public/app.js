@@ -44,6 +44,7 @@ window.MultiStreamApp = {
     document.body.classList.toggle("in-pip", pipMode);
     for (const d of document.querySelectorAll("dialog[open]")) d.close();
     layout();
+    syncPanels();
   },
   // The app calls this after signing in or out, so the chats pick it up.
   // The Android app finished downloading a YouTube page for us.
@@ -460,7 +461,7 @@ function buildTile(s) {
     else if (act === "reload") { destroyPlayer(s); s.status = "resolving"; resolveStream(s, true); }
     else if (act === "open") window.open(youtubeUrl(s), "_blank", "noopener");
     else if (act === "chat") setStreamChat(s, !s.chatOpen);
-    else if (act === "chat-pop" && s.videoId) window.open(chatUrl(s.videoId, true), "_blank", "width=420,height=720");
+    else if (act === "chat-pop" && s.videoId) openFullChat(s);
     else if (act === "audio") toggleTileAudio(s);
     else if (act === "retry") { s.status = "resolving"; destroyPlayer(s); resolveStream(s, true); }
     else if (act === "menu") openSheet(s);
@@ -744,6 +745,78 @@ function setDataMode(mode) {
 function layout() {
   layoutPage();
   if (document.fullscreenElement) fitFullscreen();
+  syncPanelsFor(400);        // tiles slide into place (CSS transition): follow them
+}
+
+/* ------------------------------------- native chats (Android app only) */
+// In the app, each live chat is YouTube's own chat page, drawn by the app over
+// the chat area: a real YouTube page, not a frame inside ours, so every option
+// works with the app's login. This page keeps an empty placeholder there and
+// tells the app exactly where it is, every time anything moves.
+// "Signed out" chat mode keeps the old frame (it needs no-cookie frames).
+const nativeChats = () => !!(APP && APP.panelOpen && APP.panelPlace && APP.panelClose) && state.chatAccount !== "out";
+const panelUrls = new Map();   // stream id -> URL the app is showing
+function panelOpen(s, url) {
+  if (panelUrls.get(s.id) === url) return;
+  panelUrls.set(s.id, url);
+  APP.panelOpen(s.id, url);
+}
+function panelClose(id) {
+  if (!panelUrls.has(id)) return;
+  panelUrls.delete(id);
+  APP.panelClose(id);
+  syncPanels();
+}
+let panelRaf = 0;
+let panelUntil = 0;
+let lastPlace = null;
+function syncPanels() {
+  if (!APP || !APP.panelPlace || panelRaf) return;
+  panelRaf = requestAnimationFrame(() => {
+    panelRaf = 0;
+    placePanels();
+    if (performance.now() < panelUntil) syncPanels();
+  });
+}
+function syncPanelsFor(ms) {
+  panelUntil = Math.max(panelUntil, performance.now() + ms);
+  syncPanels();
+}
+// Something drawn by this page is on top (a menu, dialog, search results):
+// the app's chats would cover it, so they step aside meanwhile.
+function panelsCovered() {
+  return pipMode || !!document.querySelector("dialog[open]") || !$("#results").hidden;
+}
+function placePanels() {
+  if (!APP || !APP.panelPlace) return;
+  const dpr = window.devicePixelRatio || 1;
+  const px = (v) => Math.round(v * dpr);
+  const covered = panelsCovered();
+  const fs = document.fullscreenElement;
+  const parts = [];
+  for (const id of panelUrls.keys()) {
+    const s = state.streams.find((x) => x.id === id);
+    const body = s && s.chatPane && s.chatPane.isConnected ? $(".chat-body", s.chatPane) : null;
+    let show = !!body && !covered && (!fs || fs.contains(body));
+    let r = null, c = null;
+    if (show) {
+      r = body.getBoundingClientRect();
+      // Only the part inside its area shows (the stream list scrolls under the top bar).
+      const area = fs || body.closest("#stage, #chatDock") || document.documentElement;
+      c = area.getBoundingClientRect();
+      show = r.width > 40 && r.height > 40;
+    }
+    if (!show) { parts.push(`${id},0,0,0,0,0,0,0,0,0`); continue; }
+    const x1 = Math.max(r.left, c.left), y1 = Math.max(r.top, c.top);
+    const x2 = Math.min(r.right, c.right), y2 = Math.min(r.bottom, c.bottom);
+    const vis = x2 - x1 > 40 && y2 - y1 > 40;
+    parts.push([id, vis ? 1 : 0, px(x1), px(y1), px(x2 - x1), px(y2 - y1),
+      px(r.left - x1), px(r.top - y1), px(r.width), px(r.height)].join(","));
+  }
+  const msg = parts.join(";");
+  if (msg === lastPlace) return;
+  lastPlace = msg;
+  APP.panelPlace(msg);
 }
 
 function layoutPage() {
@@ -1080,6 +1153,7 @@ function removeStream(s, { undo = true } = {}) {
   destroyPlayer(s);
   s.el && s.el.remove();
   if (s.chatPane) { s.chatPane.remove(); s.chatPane = null; }
+  panelClose(s.id);
   state.streams = state.streams.filter((x) => x !== s);
   if (state.soloId === s.id) state.soloId = state.streams[0] ? state.streams[0].id : null;
   if (state.focusId === s.id) state.focusId = state.streams[0] ? state.streams[0].id : null;
@@ -1384,7 +1458,7 @@ function chatPane(s) {
   pane.dataset.id = s.id;
   pane.innerHTML = `<div class="chat-head"><span class="tile-num"></span><span class="chat-title"></span>
       <button type="button" class="tile-btn small" data-pane="account" title="YouTube account for chat">${ICON.user}</button>
-      <button type="button" class="tile-btn small" data-pane="pop" title="Pop chat out into its own window">${ICON.open}</button>
+      <button type="button" class="tile-btn small" data-pane="pop" title="Full chat (all options)">${ICON.open}</button>
       <button type="button" class="tile-btn small" data-pane="close" title="Hide chat">${ICON.close}</button></div>
     <div class="chat-body"></div>`;
   pane.addEventListener("click", (e) => {
@@ -1392,7 +1466,7 @@ function chatPane(s) {
     if (!b) return;
     if (b.dataset.pane === "close") setStreamChat(s, false);
     else if (b.dataset.pane === "account") openAccount();
-    else if (s.videoId) window.open(chatUrl(s.videoId, true), "_blank", "width=420,height=720");
+    else if (s.videoId) openFullChat(s);
   });
   // Point at a chat and its stream lights up, so it's clear which is which.
   // (Its header too: the pointer moving straight onto the chat itself is seen
@@ -1414,6 +1488,7 @@ function renderTileChat(s) {
   const inTile = chatInTile();
   box.hidden = !(s.chatOpen && inTile);
   if (!s.chatOpen) {
+    panelClose(s.id);
     if (s.chatPane) { s.chatPane.remove(); s.chatPane = null; }
     s.el.classList.remove("chat-linked");
     renderDock();
@@ -1426,6 +1501,7 @@ function renderTileChat(s) {
   $(".tile-num", pane).textContent = String(state.streams.indexOf(s) + 1);
   $(".chat-title", pane).textContent = s.label;
   const body = $(".chat-body", pane);
+  if (!s.videoId || !nativeChats()) panelClose(s.id);
   if (!s.videoId) {
     if (pane.dataset.video !== "") {
       body.innerHTML = `<div class="chat-empty">Chat shows up here when ${escapeHtml(s.label)} goes live.</div>`;
@@ -1435,10 +1511,17 @@ function renderTileChat(s) {
     pane.dataset.video = s.videoId;
     // "Signed out": the chat frame gets no cookies at all (credentialless), so it
     // never shows your account. "Signed in": it uses your YouTube sign-in.
-    const noCookies = state.chatAccount === "out" ? " credentialless" : "";
-    body.innerHTML = `<iframe title="Live chat: ${escapeHtml(s.label)}"${noCookies} src="${chatUrl(s.videoId)}"></iframe>`;
+    if (nativeChats()) {
+      // Android app: YouTube's own chat page, drawn by the app right here.
+      body.innerHTML = `<div class="chat-empty chat-native">Loading chat…</div>`;
+      panelOpen(s, chatUrl(s.videoId, true) + "&dark_theme=1");
+    } else {
+      const noCookies = state.chatAccount === "out" ? " credentialless" : "";
+      body.innerHTML = `<iframe title="Live chat: ${escapeHtml(s.label)}"${noCookies} src="${chatUrl(s.videoId)}"></iframe>`;
+    }
   }
   renderDock();
+  syncPanels();
 }
 
 // The chat column: 1-2 chats stack at full height; 3 or more become tabs so
@@ -1502,6 +1585,7 @@ function renderAccount() {
 function setChatAccount(mode) {
   if (mode === state.chatAccount) return;
   state.chatAccount = mode;
+  document.body.classList.toggle("native-chats", nativeChats());
   save();
   reloadChats();
   renderAccount();
@@ -1533,6 +1617,15 @@ function signOut() {
   // show the chats signed out instead.
   setChatAccount("out");
   toast("Chats now show signed out. You're still signed in to YouTube elsewhere in this browser.");
+}
+
+// The full YouTube chat page (every option: reply, report, block…). In the
+// Android app it opens full screen inside the app with the app's login; on
+// the website it opens in its own window.
+function openFullChat(s) {
+  const url = chatUrl(s.videoId, true);
+  if (APP && APP.openChat) APP.openChat(url);
+  else window.open(url, "_blank", "width=420,height=720");
 }
 
 function toggleAllChats() {
@@ -1720,6 +1813,19 @@ function bindUi() {
   if (window.visualViewport) window.visualViewport.addEventListener("resize", unshift);
 }
 
+function bindPanels() {
+  if (!APP || !APP.panelPlace) return;
+  $("#stage").addEventListener("scroll", syncPanels, { passive: true });
+  window.addEventListener("resize", () => syncPanelsFor(300));
+  document.addEventListener("fullscreenchange", () => syncPanelsFor(500));
+  // Menus, dialogs and search results opening or closing.
+  const watch = new MutationObserver(() => syncPanels());
+  for (const d of document.querySelectorAll("dialog")) watch.observe(d, { attributes: true, attributeFilter: ["open"] });
+  watch.observe($("#results"), { attributes: true, attributeFilter: ["hidden"] });
+  new ResizeObserver(() => syncPanels()).observe($("#chatDock"));
+  $("#chatDock").addEventListener("click", () => syncPanelsFor(200));   // tab switches
+}
+
 function init() {
   document.body.classList.toggle("touch", TOUCH);
   document.body.classList.toggle("android-app", !!APP);
@@ -1731,8 +1837,11 @@ function init() {
     b.addEventListener("click", () => APP.enterPip());
     $(".mobile-actions").insertBefore(b, $("#mMenu"));
   }
+  if (APP && APP.panelCloseAll) APP.panelCloseAll();   // left over from before a reload
   load();
+  document.body.classList.toggle("native-chats", nativeChats());
   bindUi();
+  bindPanels();
   for (const s of state.streams) { buildTile(s); resolveStream(s); }
   setLayout(state.layout);
   setAudioMode(state.audioMode);
