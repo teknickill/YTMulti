@@ -303,6 +303,8 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 /* Picture-in-picture (Android app): just the stream with sound, edge to edge. */
 .in-pip .bar, .in-pip #notice, .in-pip .dock, .in-pip .toast, .in-pip #empty { display: none !important; }
 .stage.pip { overflow: hidden; background: #000; }
+.tile:fullscreen { border-radius: 0; box-shadow: none; transition: none; }
+.tile.fs-nochat .tile-chat { display: none; }
 .stage.pip .tile { transition: none; box-shadow: none; border-radius: 0; }
 .stage.pip .tile:not(.pip-main) { visibility: hidden; pointer-events: none; }
 .stage.pip .tile-top, .stage.pip .tile-bottom, .stage.pip .tile-chat, .stage.pip .data-off span { display: none; }

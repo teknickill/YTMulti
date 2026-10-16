@@ -740,7 +740,13 @@ function setDataMode(mode) {
   save();
 }
 
+// Every layout pass also keeps a full-screen stream fitted to the screen.
 function layout() {
+  layoutPage();
+  if (document.fullscreenElement) fitFullscreen();
+}
+
+function layoutPage() {
   const stage = $("#stage");
   const gap = 8;
   const W = stage.clientWidth - gap * 2;
@@ -1127,6 +1133,22 @@ function hideControls(s, delay = 0) {
 function toggleFullscreen(s) {
   if (document.fullscreenElement) { document.exitFullscreen(); return; }
   if (s.el.requestFullscreen) s.el.requestFullscreen().catch(() => {});
+}
+
+// A full-screen stream is laid out for the whole screen: upright with its
+// chat open, video on top and chat filling the rest; sideways, just video.
+function fitFullscreen() {
+  const el = document.fullscreenElement;
+  const s = el && state.streams.find((x) => x.el === el);
+  for (const x of state.streams) if (x !== s && x.el) x.el.classList.remove("fs-nochat");
+  if (!s) { layoutPage(); return; }
+  const w = window.innerWidth, h = window.innerHeight;
+  const withChat = s.chatOpen && chatInTile() && h > w;
+  const keep = chatBelow;
+  chatBelow = withChat;
+  placeTile(s, 0, 0, w, h);
+  chatBelow = keep;
+  s.el.classList.toggle("fs-nochat", !withChat);
 }
 
 /* ------------------------------------------------- ⋯ menu (phones/tablets) */
@@ -1677,6 +1699,8 @@ function bindUi() {
   });
 
   new ResizeObserver(() => layout()).observe($("#stage"));
+  document.addEventListener("fullscreenchange", fitFullscreen);
+  window.addEventListener("resize", () => { if (document.fullscreenElement) fitFullscreen(); });
   // The page itself never scrolls (only the stream list does). Phones can
   // still nudge it, e.g. to show a focused chat box over the keyboard, and
   // then leave it shifted with the top bar gone. Snap it back.
