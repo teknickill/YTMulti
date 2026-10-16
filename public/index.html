@@ -177,8 +177,19 @@
         <button type="button" class="btn" id="signOutBtn">Sign out</button>
       </div>
       <p class="account-note muted"></p>
+      <button type="button" class="btn" id="debugBtn" hidden>Copy chat debug info</button>
     </div>
     <form method="dialog"><button class="sheet-cancel">Done</button></form>
+  </dialog>
+
+  <dialog id="debug" class="sheet account" aria-label="Chat debug info">
+    <div class="sheet-title">Chat debug info</div>
+    <div class="sheet-pad">
+      <p class="muted debug-how">Open a chat, try the ⋮ menu on a message, then come back here. Copy this and paste it to whoever is fixing the app. It has no passwords or messages.</p>
+      <textarea id="debugText" readonly rows="12"></textarea>
+      <button type="button" class="btn primary" id="debugCopy">Copy</button>
+    </div>
+    <form method="dialog"><button class="sheet-cancel">Close</button></form>
   </dialog>
 
   <dialog id="sheet" class="sheet" aria-label="Stream options">

@@ -1590,7 +1590,7 @@ function renderAccount() {
   $("#signInBtn").hidden = signedOutMode;
   $("#signOutBtn").textContent = APP ? "Sign out of YouTube in this app" : "Sign out (show chats signed out)";
   $("#signOutBtn").hidden = !APP && signedOutMode;
-  $("#debugBtn").hidden = !(APP && APP.debugInfo);
+  if ($("#debugBtn")) $("#debugBtn").hidden = !(APP && APP.debugInfo);
   $(".account-note").textContent = APP
     ? "Signing in here only affects this app. If Google says this app or browser may not be secure, use ↗ on a chat to open it in your browser instead, where you're already signed in."
     : "Embedded chats use the YouTube login of this browser. If a chat still shows signed out after signing in, your browser is blocking third-party cookies for this site — use ↗ on the chat (always signed in), or allow third-party cookies for this site.";
@@ -1730,12 +1730,14 @@ function bindUi() {
   document.querySelectorAll("[data-account]").forEach((b) => b.addEventListener("click", () => setChatAccount(b.dataset.account)));
   $("#signInBtn").addEventListener("click", signIn);
   $("#signOutBtn").addEventListener("click", signOut);
-  $("#debugBtn").addEventListener("click", () => {
+  // Optional pieces: skipped if this index.html doesn't have them (an older copy),
+  // so a missing button can never stop the whole app from starting.
+  $("#debugBtn") && $("#debugBtn").addEventListener("click", () => {
     $("#account").close();
     $("#debugText").value = APP && APP.debugInfo ? APP.debugInfo() : "Only available in the Android app.";
     $("#debug").showModal();
   });
-  $("#debugCopy").addEventListener("click", async () => {
+  $("#debugCopy") && $("#debugCopy").addEventListener("click", async () => {
     const t = $("#debugText");
     try { await navigator.clipboard.writeText(t.value); toast("Copied."); }
     catch (e) { t.focus(); t.select(); document.execCommand && document.execCommand("copy"); toast("Copied (or press and hold to copy)."); }
