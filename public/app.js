@@ -451,6 +451,11 @@ function buildTile(s) {
     showControls(s);
   });
   $(".hit", el).addEventListener("dblclick", () => toggleFullscreen(s));
+  // Min data mode: tapping the still picture starts that stream.
+  $(".data-off", el).addEventListener("click", () => {
+    giveSound(s);
+    if (s.player && s.player.playVideo) s.player.playVideo();
+  });
   el.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-act]");
     if (!btn) return;
@@ -647,18 +652,23 @@ function setRect(el, x, y, w, h) {
 }
 
 // Positions a tile, then splits it into video + chat when its chat is open.
-function placeTile(s, x, y, w, h) {
+// Phones: the stream's name and buttons sit in a bar ABOVE the video, so the
+// whole video belongs to YouTube's own player and all its controls work.
+const BAR_H = 46;
+function placeTile(s, x, y, w, h, bar = false) {
   setRect(s.el, x, y, w, h);
   const vid = $(".vid", s.el);
   const chat = $(".tile-chat", s.el);
+  const top = bar ? BAR_H : 0;
   s.el.classList.toggle("chat-below", s.chatOpen && chatBelow);
-  let vw = w, vh = h;
+  s.el.classList.toggle("barred", bar);
+  let vw = w, vh = h - top;
   if (s.chatOpen && chatBelow) {
-    vh = Math.round(Math.min(h, w * 9 / 16));
-    Object.assign(vid.style, { width: "100%", height: vh + "px" });
-    Object.assign(chat.style, { left: "0", top: vh + "px", width: "100%", height: Math.round(h - vh) + "px" });
+    vh = Math.round(Math.min(h - top, w * 9 / 16));
+    Object.assign(vid.style, { top: top + "px", width: "100%", height: vh + "px" });
+    Object.assign(chat.style, { left: "0", top: (top + vh) + "px", width: "100%", height: Math.round(h - top - vh) + "px" });
   } else {
-    Object.assign(vid.style, { width: "100%", height: "100%" });
+    Object.assign(vid.style, { top: top + "px", width: "100%", height: (h - top) + "px" });
   }
   s.vidSize = { w: vw, h: vh };
   applyCap(s);
@@ -861,10 +871,11 @@ function layoutPage() {
     let y = gap;
     // A stream with its chat open fills exactly one screen: video on top, chat
     // using all the height left below it (no blank band, nothing cut off).
-    const chatH = Math.max(320, stage.clientHeight - gap * 2 - Math.round(w * 9 / 16));
+    const bar = TOUCH ? BAR_H : 0;
+    const chatH = Math.max(240, stage.clientHeight - gap * 2 - bar - Math.round(w * 9 / 16));
     for (const s of ordered) {
-      const h = w * 9 / 16 + (s.chatOpen && chatBelow ? chatH : 0);
-      placeTile(s, gap, y, w, h);
+      const h = bar + w * 9 / 16 + (s.chatOpen && chatBelow ? chatH : 0);
+      placeTile(s, gap, y, w, h, !!bar);
       y += h + gap;
     }
     return;
@@ -893,6 +904,8 @@ function layoutPage() {
 
 /* ------------------------------------------------------------------ audio */
 function audioUnlocked() {
+  // The Android app lets videos play sound without a tap first.
+  if (APP) return true;
   return !navigator.userActivation || navigator.userActivation.hasBeenActive;
 }
 
@@ -1227,7 +1240,7 @@ function fitFullscreen() {
   const withChat = s.chatOpen && chatInTile() && h > w;
   const keep = chatBelow;
   chatBelow = withChat;
-  placeTile(s, 0, 0, w, h);
+  placeTile(s, 0, 0, w, h, TOUCH && h > w);
   chatBelow = keep;
   s.el.classList.toggle("fs-nochat", !withChat);
 }
@@ -1577,6 +1590,7 @@ function renderAccount() {
   $("#signInBtn").hidden = signedOutMode;
   $("#signOutBtn").textContent = APP ? "Sign out of YouTube in this app" : "Sign out (show chats signed out)";
   $("#signOutBtn").hidden = !APP && signedOutMode;
+  $("#debugBtn").hidden = !(APP && APP.debugInfo);
   $(".account-note").textContent = APP
     ? "Signing in here only affects this app. If Google says this app or browser may not be secure, use ↗ on a chat to open it in your browser instead, where you're already signed in."
     : "Embedded chats use the YouTube login of this browser. If a chat still shows signed out after signing in, your browser is blocking third-party cookies for this site — use ↗ on the chat (always signed in), or allow third-party cookies for this site.";
@@ -1716,6 +1730,16 @@ function bindUi() {
   document.querySelectorAll("[data-account]").forEach((b) => b.addEventListener("click", () => setChatAccount(b.dataset.account)));
   $("#signInBtn").addEventListener("click", signIn);
   $("#signOutBtn").addEventListener("click", signOut);
+  $("#debugBtn").addEventListener("click", () => {
+    $("#account").close();
+    $("#debugText").value = APP && APP.debugInfo ? APP.debugInfo() : "Only available in the Android app.";
+    $("#debug").showModal();
+  });
+  $("#debugCopy").addEventListener("click", async () => {
+    const t = $("#debugText");
+    try { await navigator.clipboard.writeText(t.value); toast("Copied."); }
+    catch (e) { t.focus(); t.select(); document.execCommand && document.execCommand("copy"); toast("Copied (or press and hold to copy)."); }
+  });
   $("#account").addEventListener("click", (e) => { if (e.target === $("#account")) $("#account").close(); });
   $("#helpBtn").addEventListener("click", () => $("#help").showModal());
   document.querySelectorAll("[data-layout]").forEach((b) => b.addEventListener("click", () => setLayout(b.dataset.layout)));
@@ -1775,12 +1799,15 @@ function bindUi() {
   placeToolbar(mq.matches);
 
   // The first click/key anywhere unlocks sound; apply it right away, once.
+  // Applied once the tap has finished (not on finger-down): hiding the "tap to
+  // turn the sound on" banner moves everything up, and doing that mid-tap made
+  // the very first tap miss the button under your finger.
   const unlock = () => {
-    setTimeout(applyAudio, 0);
-    window.removeEventListener("pointerdown", unlock, true);
+    setTimeout(applyAudio, 150);
+    window.removeEventListener("pointerup", unlock, true);
     window.removeEventListener("keydown", unlock, true);
   };
-  window.addEventListener("pointerdown", unlock, true);
+  window.addEventListener("pointerup", unlock, true);
   window.addEventListener("keydown", unlock, true);
   setInterval(syncFromPlayers, 1000);
 
@@ -1813,6 +1840,20 @@ function bindUi() {
   if (window.visualViewport) window.visualViewport.addEventListener("resize", unshift);
 }
 
+// Touch screens have no tap layer over the video (YouTube's player gets every
+// tap), so notice which player was touched: the page loses focus to it.
+function bindPlayerTaps() {
+  if (!TOUCH) return;
+  window.addEventListener("blur", () => setTimeout(() => {
+    const f = document.activeElement;
+    if (!f || f.tagName !== "IFRAME" || !f.closest(".player")) return;
+    const s = state.streams.find((x) => x.el && x.el.contains(f));
+    if (s && state.audioMode === "solo" && state.soloId !== s.id) giveSound(s);
+    // Hand focus back so the next tap on any player is noticed too.
+    setTimeout(() => { if (document.activeElement === f) f.blur(); }, 400);
+  }, 0));
+}
+
 function bindPanels() {
   if (!APP || !APP.panelPlace) return;
   $("#stage").addEventListener("scroll", syncPanels, { passive: true });
@@ -1842,6 +1883,7 @@ function init() {
   document.body.classList.toggle("native-chats", nativeChats());
   bindUi();
   bindPanels();
+  bindPlayerTaps();
   for (const s of state.streams) { buildTile(s); resolveStream(s); }
   setLayout(state.layout);
   setAudioMode(state.audioMode);
