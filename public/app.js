@@ -47,6 +47,21 @@ window.MultiStreamApp = {
     syncPanels();
   },
   // The app calls this after signing in or out, so the chats pick it up.
+  // "+ Add to MultiStream" while browsing YouTube in the app. Returns
+  // "added" | "dupe" | "full" | "none" (not a video/live/channel page).
+  addFromApp(url) {
+    const c = YTC.classify(url);
+    let input = null;
+    if (c.kind === "video") input = c.videoId;
+    else if (c.kind === "channel") input = c.path.startsWith("/@") ? c.path.slice(1) : "https://www.youtube.com" + c.path;
+    if (!input) return "none";
+    const r = addOne(input);
+    if (r === "added") {
+      layout(); save(); applyAudio(); updateGlobalButtons();
+      toast("Added from YouTube.");
+    }
+    return r;
+  },
   // The Android app finished downloading a YouTube page for us.
   ytFetchDone(id, status) { nativeDone(id, status); },
   accountChanged(signedIn) {
@@ -1019,7 +1034,11 @@ function addOne(input, saved = {}) {
     return "full";
   }
   const vid = videoIdOf(input);
-  const dupe = state.streams.find((s) => s.input.toLowerCase() === input.toLowerCase() || (vid && s.videoId === vid));
+  // Video IDs are case-sensitive (abc… and ABC… are different videos);
+  // @handles and channel links aren't.
+  const dupe = state.streams.find((s) => vid
+    ? s.input === input || s.videoId === vid
+    : s.input.toLowerCase() === input.toLowerCase());
   if (dupe) {
     toast(`${dupe.label} is already on screen.`);
     return "dupe";
@@ -1780,6 +1799,13 @@ function bindUi() {
   // Phones: slim bar
   $("#mMenu").innerHTML = '<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
   $("#mAdd").addEventListener("click", openAdd);
+  // Android app: browse YouTube itself (home feed, subscriptions, search).
+  const canBrowse = !!(APP && APP.openBrowse);
+  document.querySelectorAll("[data-browse], .browse-row").forEach((b) => { b.hidden = !canBrowse; });
+  document.querySelectorAll("[data-browse]").forEach((b) => b.addEventListener("click", () => {
+    if ($("#addSheet").open) $("#addSheet").close();
+    APP.openBrowse();
+  }));
   document.querySelectorAll("[data-open-add]").forEach((b) => b.addEventListener("click", openAdd));
   $("#mMute").addEventListener("click", () => { state.allMuted = !state.allMuted; applyAudio(); });
   $("#mMenu").addEventListener("click", () => $("#panel").showModal());

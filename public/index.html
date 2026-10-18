@@ -78,6 +78,7 @@
           <li>An 11-character video ID</li>
         </ul>
         <button type="button" class="btn primary only-mobile" data-open-add>+ Add a stream</button>
+        <button type="button" class="btn browse-btn" data-browse hidden>▶ Browse YouTube</button>
         <div class="examples">
           <span class="muted">Try one:</span>
           <button type="button" class="chip" data-example="@LofiGirl">Lofi Girl</button>
@@ -123,6 +124,10 @@
 
   <dialog id="addSheet" class="sheet" aria-label="Add streams">
     <div class="sheet-title">Add streams</div>
+    <div class="sheet-pad browse-row" hidden>
+      <button type="button" class="btn primary browse-btn" data-browse>▶ Browse YouTube</button>
+      <span class="muted">Your home feed, subscriptions and search — tap <b>+ Add to MultiStream</b> on anything.</span>
+    </div>
     <div id="addSlot" class="sheet-pad"></div>
     <div class="examples sheet-pad">
       <span class="muted">Try:</span>
